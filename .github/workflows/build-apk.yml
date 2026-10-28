@@ -53,7 +53,10 @@ jobs:
           test -n "$SIGNING_STORE_PASSWORD"
           test -n "$SIGNING_KEY_PASSWORD"
           test -n "$SIGNING_KEY_ALIAS"
+
           echo "$SIGNING_KEY_BASE64" | base64 --decode > release-key.jks
+
+          test -s release-key.jks
 
           cat >> app/build.gradle <<'GRADLE'
 
@@ -77,6 +80,10 @@ jobs:
 
       - name: Build signed APK
         working-directory: ems_app
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
         run: gradle --no-daemon assembleRelease
 
       - name: Verify APK signature
