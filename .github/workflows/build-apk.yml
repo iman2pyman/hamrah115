@@ -1,9 +1,9 @@
-name: Build Hamrah115 APK
+name: Build Hamrah115 Signed Release APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
 
 permissions:
   contents: read
@@ -11,14 +11,15 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract project ZIP
+      - name: Extract Android project
         run: unzip -o Hamrah115-Android-Project.zip -d .
 
-      - name: Set up Java 17
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -29,7 +30,6 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      
       - name: Set up Android SDK
         run: |
           echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
@@ -37,16 +37,57 @@ jobs:
           echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "/usr/local/lib/android/sdk/platform-tools" >> "$GITHUB_PATH"
           yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
-      - name: Install Android SDK 35
+
+      - name: Install Android SDK
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
 
-      - name: Build APK
+      - name: Configure signing
         working-directory: ems_app
-        run: gradle --no-daemon assembleDebug
+        env:
+          SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+        run: |
+          test -n "$SIGNING_KEY_BASE64"
+          test -n "$SIGNING_STORE_PASSWORD"
+          test -n "$SIGNING_KEY_PASSWORD"
+          test -n "$SIGNING_KEY_ALIAS"
+          echo "$SIGNING_KEY_BASE64" | base64 --decode > release-key.jks
 
-      - name: Upload APK
+          cat >> app/build.gradle <<'GRADLE'
+
+          android {
+              signingConfigs {
+                  release {
+                      storeFile file('release-key.jks')
+                      storePassword System.getenv('SIGNING_STORE_PASSWORD')
+                      keyAlias System.getenv('SIGNING_KEY_ALIAS')
+                      keyPassword System.getenv('SIGNING_KEY_PASSWORD')
+                  }
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                      minifyEnabled false
+                  }
+              }
+          }
+          GRADLE
+
+      - name: Build signed APK
+        working-directory: ems_app
+        run: gradle --no-daemon assembleRelease
+
+      - name: Verify APK signature
+        run: |
+          APK="ems_app/app/build/outputs/apk/release/app-release.apk"
+          test -f "$APK"
+          /usr/local/lib/android/sdk/build-tools/35.0.0/apksigner verify --verbose --print-certs "$APK"
+
+      - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: Hamrah115-debug-apk
-          path: ems_app/app/build/outputs/apk/debug/app-debug.apk
+          name: Hamrah115-release-signed-apk
+          path: ems_app/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
