@@ -16,8 +16,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract Android project
-        run: unzip -o Hamrah115-Android-Project.zip -d .
+      # Source code is stored as normal GitHub files under ems_app/.
+      # The legacy ZIP is retained only as the source of binary assets
+      # (the original PDF and launcher PNGs), so GitHub can display the code.
+      - name: Restore binary assets from legacy archive
+        run: |
+          mkdir -p legacy_archive
+          unzip -o Hamrah115-Android-Project.zip -d legacy_archive
+          mkdir -p ems_app/app/src/main/assets
+          cp legacy_archive/ems_app/app/src/main/assets/protocols.pdf ems_app/app/src/main/assets/
+          cp legacy_archive/ems_app/app/src/main/assets/app_icon_512.png ems_app/app/src/main/assets/
+          for density in hdpi mdpi xhdpi xxhdpi xxxhdpi; do
+            mkdir -p "ems_app/app/src/main/res/mipmap-$density"
+            cp "legacy_archive/ems_app/app/src/main/res/mipmap-$density/ic_launcher.png" "ems_app/app/src/main/res/mipmap-$density/"
+          done
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -53,11 +65,8 @@ jobs:
           test -n "$SIGNING_STORE_PASSWORD"
           test -n "$SIGNING_KEY_PASSWORD"
           test -n "$SIGNING_KEY_ALIAS"
-
           echo "$SIGNING_KEY_BASE64" | base64 --decode > release-key.jks
-
           test -s release-key.jks
-
           cat >> app/build.gradle <<'GRADLE'
 
           android {
